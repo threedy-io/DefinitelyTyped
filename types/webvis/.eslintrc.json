@@ -1,0 +1,20 @@
+{
+    "rules": {
+        // error: Type parameter T is used only once
+        // Must be off because of registerListener
+        "@definitelytyped/no-unnecessary-generics" : "off",
+        // error: Interface name must not match the RegExp: /^I[A-Z]/u
+        // Must be off because of ICollection and IEventListener
+        "@typescript-eslint/naming-convention" : "off",
+        // Must be extended because of using custom tags
+        "jsdoc/check-tag-names" : ["error", {
+            "definedTags": ["valueType", "hidden", "experimental", "remarks", "typeParam"]
+        }],
+        // error: Use an `interface` instead of a `type
+        // Must be off because of using interfaces and types
+        "@typescript-eslint/consistent-type-definitions": "off",
+        // error: Type [T] is a single-element tuple type. You probably meant T[]
+        // Must be off because of [MeasurementType.SINGLE]: [MeasurementTarget];
+        "@definitelytyped/no-single-element-tuple-type" : "off"
+    }
+}
