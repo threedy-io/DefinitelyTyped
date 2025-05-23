@@ -1,0 +1,6 @@
+{
+    "rules": {
+        "jsdoc/check-tag-names": "off",
+        "@typescript-eslint/consistent-type-definitions": ["error", "type"]
+    }
+}
