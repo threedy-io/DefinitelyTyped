@@ -1,0 +1,10 @@
+{
+    "rules": {
+        // error: '@type' is redundant when using a type system
+        // Must be off because UISetting is using the @type tag
+        "jsdoc/check-tag-names" : "off",
+        // error: Use an `interface` instead of a `type
+        // Must be changed because of "type" instead of "interface"
+        "@typescript-eslint/consistent-type-definitions": ["error", "type"]
+    }
+}
