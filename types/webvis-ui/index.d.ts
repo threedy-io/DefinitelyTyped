@@ -82,6 +82,9 @@ declare namespace webvisUI {
         LABEL_TOOLTIP_ENABLED = "labelTooltipEnabled",
         /**
          * A function to define the content of tooltips.
+         *
+         * @deprecated UISetting.LABEL_TOOLTIP_FUNCTION is deprecated and will be removed in a future version.
+         * The function receives Property.NAMES, which now holds only the label of the node.
          */
         LABEL_TOOLTIP_FUNCTION = "labelTooltipFunction",
         /**
@@ -198,6 +201,10 @@ declare namespace webvisUI {
          * Sets the unit for data inside the webVis UI.
          */
         UNIT = "unit",
+        /**
+         * Sets the step size for all unit-based inputs inside the webVis UI.
+         */
+        UNIT_STEP = "unitStep",
         /**
          * Specifies a function which is called when the user clicks on the variants button of a tree item.
          * The specified function overrides the default behavior of opening the standard variant dialog.

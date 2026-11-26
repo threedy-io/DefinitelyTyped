@@ -3,7 +3,7 @@
     "nonNpm": true,
     "nonNpmDescription": "Type definitions for non-npm package webvis-ui 3.13",
     "name": "@types/webvis-ui",
-    "version": "3.13.9999",
+    "version": "3.14.9999",
     "projects": [
         "https://threedy.io"
     ],
