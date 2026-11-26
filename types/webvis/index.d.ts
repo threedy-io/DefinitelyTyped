@@ -1167,6 +1167,7 @@ declare namespace webvis {
         TURNTABLE = "TURNTABLE",
         FLY = "FLY",
         D_CAD = "D_CAD",
+        S_CAD = "S_CAD",
         XR_TURNTABLE = "XR_TURNTABLE",
     }
     /**
@@ -4819,11 +4820,14 @@ To enable this, members can exchange space handles, which are shareable referenc
     : T extends "hubURL" ? string
     : T extends "initialStateActivation" ? boolean
     : T extends "language" ? string
+    : T extends "localCacheAuthCheckEnabled" ? boolean
     : T extends "logLevel" ? LogLevel
     : T extends "maxActiveSceneVolumeDiameter" ? number
     : T extends "maxConcurrentDownloads" ? number
     : T extends "measurementAngularTolerance" ? number
     : T extends "measurementMaterialDensities" ? number
+    : T extends "memberCodeExecutionEnabled" ? boolean
+    : T extends "memberScreenshotsEnabled" ? boolean
     : T extends "modelviewPrintContentFunction"
         ? (context: ContextAPI, nodeID: number, modelViewID: number) => Promise<string>
     : T extends "modelviewPrintResourceNameFunction" ? (context: ContextAPI, nodeID: number) => Promise<string>
@@ -5323,13 +5327,13 @@ To enable this, members can exchange space handles, which are shareable referenc
         /**
          * Defines the limit for the GPU memory in megabytes.
          *
-         * @default 1024
+         * @default 2048
          */
         MAX_GPU_MEMORY = "maxGPUMemory",
         /**
          * Defines the limit for the CPU-side memory (RAM) in megabytes.
          *
-         * @default 512
+         * @default 1024
          */
         MAX_SRC_MEMORY = "maxSRCCPUMemory",
         /**
@@ -5551,6 +5555,13 @@ To enable this, members can exchange space handles, which are shareable referenc
          * @default false
          */
         SSAO_ENABLED = "ssaoEnabled",
+        /**
+         * Defines how long the middle mouse button must be held (in ms) without any movement
+         * to update the center of rotation for the S_CAD navigation mode.
+         *
+         * @default 2000
+         */
+        S_CAD_UPDATE_COR_DELAY = "sCadUpdateCorDelay",
         /**
          * Defines whether temporal anti-aliasing (TAA) is enabled or not.
          * TAA is only available in static scenes. It is disabled in the following cases:
@@ -5798,18 +5809,9 @@ To enable this, members can exchange space handles, which are shareable referenc
          */
         AUX_MODE_UNCOLOR_FACES_ON_LEAVE = "auxModeUncolorFacesOnLeave",
         /**
-         * Controls whether queries that span multiple resources are sent as a single batched request
-         * or as individual requests.
+         * @deprecated SettingStrings.BATCHED_QUERIES is deprecated and will be removed in a future version.
          *
-         * In WebVis, complex 3D models can be composed of multiple resources, each representing
-         * a portion of the complete model. When enabled, this setting combines queries that would
-         * normally be sent separately to each resource into a single network request, which can
-         * significantly improve performance by reducing network round-trips and connection overhead.
-         *
-         * This is particularly beneficial when:
-         * - Working with assemblies composed of multiple separate resources
-         * - Searching for components across the entire model
-         * - Querying linked data that spans multiple resources
+         * Queries are always executed in batches, and the setting is no longer used.
          *
          * @default false
          * @see {@link QueryAPI.query} - For executing queries against the model
@@ -6001,18 +6003,13 @@ To enable this, members can exchange space handles, which are shareable referenc
          * - Session management and authentication
          * - WebSocket connections for real-time features
          *
-         * The hub URL is resolved automatically by WebVis using the following priority sequence:
+         * When a context is created via {@link requestContext}, WebVis takes the hub URL from the first of these sources
+         * that provides one:
          *
-         * 1. **URL Parameter:** If a hub URL is specified in the browser's URL parameters (e.g., `?hubURL=...`), it takes
-         * precedence and will be used.
-         * 2. **<webvis-config> Element:** If not found in the URL, WebVis searches for a `<webvis-config>` HTML element in
-         * the DOM and attempts to parse the hub URL from its attributes or content.
-         * 3. **Config File:** If still not found, WebVis tries to load the hub URL from a configuration file:
-         *    - It first looks for `webvis.config.json` at the root of the server.
-         *    - If not found there, it searches for a config file in the same directory as the script URL from which WebVis
-         * was imported.
-         * 4. **Script Parsing:** As a last resort, the hub URL is parsed directly from the imported WebVis script itself
-         * (if embedded or bundled).
+         * 1. The settings passed to {@link requestContext}
+         * 2. The `webvis.config.json` file in the same directory as the page that runs WebVis, unless
+         *    {@link SettingStrings.LOAD_REMOTE_CONFIG_FILE} is disabled
+         * 3. The URL of the WebVis script.
          *
          * @default undefined
          */
@@ -6027,11 +6024,20 @@ To enable this, members can exchange space handles, which are shareable referenc
          */
         INITIAL_STATE_ACTIVATION = "initialStateActivation",
         /**
-         * Controls whether WebVis attempts to load settings from a remote configuration file.
+         * Controls whether WebVis attempts to load settings from remote configuration files when a
+         * context is created via {@link requestContext}.
          *
-         * When enabled (default), WebVis will attempt to fetch a `webvis.config.json` file from the
-         * server during initialization. Settings from this file are merged with any explicitly
-         * provided settings, with explicit settings taking precedence.
+         * When enabled (default), WebVis attempts to fetch two `webvis.config.json` files during
+         * initialization, from lowest to highest priority:
+         * 1. The hub's config file at `<hubURL>/repo/webvis/webvis.config.json`, if a hub URL is known
+         * 2. The app's config file in the same directory as the page that runs WebVis
+         *
+         * Settings from these files are merged with the settings passed to {@link requestContext},
+         * with the passed settings taking precedence. A missing, unreachable or invalid config file
+         * is skipped, and initialization continues with the remaining settings.
+         *
+         * This setting only takes effect when passed to {@link requestContext}. Setting it inside a
+         * config file does not prevent the config files from being loaded.
          *
          * This capability is useful for:
          * - Providing consistent default settings across multiple applications
@@ -6039,13 +6045,31 @@ To enable this, members can exchange space handles, which are shareable referenc
          * - Deploying configuration changes without updating application code
          * - Supporting environment-specific settings (development, staging, production)
          *
-         * The config file is loaded from the same path as the WebVis library itself. If the file
-         * cannot be found or accessed, initialization continues normally using only the explicitly
-         * provided settings.
-         *
          * @default true
          */
         LOAD_REMOTE_CONFIG_FILE = "loadRemoteConfigFile",
+        /**
+         * Only takes effect while the webvis service worker controls the page (see {@link ServiceWorkerAPI}).
+         *
+         * Controls whether access to a resource is checked against the delivery service before its locally
+         * cached data is served.
+         *
+         * Data served from the local cache does not reach the delivery service. For backends that authorize
+         * only at data level (late authorization), this would skip the only authorization check. When enabled
+         * (default), the service worker therefore sends one uncached HEAD request to the delivery service before
+         * the first cache hit for a resource is served; if it is rejected, the resource enters
+         * {@link NodeState.ERROR_AUTHORIZATION}.
+         *
+         * Disabling it saves that request and is safe for backends that authorize when a resource is added.
+         * Set it centrally in the hub's or app's `webvis.config.json` (`{ "localCacheAuthCheckEnabled": false }`)
+         * or when creating the context (`webvis.requestContext("my-context", { localCacheAuthCheckEnabled: false })`).
+         *
+         * The value is passed to the service worker when it connects and applies to every tab of the origin.
+         * Later changes of this setting are ignored.
+         *
+         * @default true
+         */
+        LOCAL_CACHE_AUTH_CHECK_ENABLED = "localCacheAuthCheckEnabled",
         /**
          * Controls the verbosity of messages output to the browser console by the WebVis logging system.
          *
@@ -6110,6 +6134,32 @@ To enable this, members can exchange space handles, which are shareable referenc
          * @see {@link MeasurementAPI} - For performing measurements
          */
         MEASUREMENT_MATERIAL_DENSITIES = "measurementMaterialDensities",
+        /**
+         * Controls whether other members of a 3DSpace, such as AI agents connected through the Space MCP endpoint of the
+         * instant3Dhub, may run JavaScript code in this client.
+         *
+         * The code runs with all the rights of the application: it can read and change everything the user can, including
+         * models that the requesting member has no access to. Only enable it if the users of the application trust the
+         * other members of their 3DSpaces accordingly.
+         *
+         * Code is only run if the instant3Dhub allows member code execution as well, with the Helm value
+         * `experimental.spaces.memberCodeExecution.enabled`. Changes take effect for the next request.
+         *
+         * @default false
+         */
+        MEMBER_CODE_EXECUTION_ENABLED = "memberCodeExecutionEnabled",
+        /**
+         * Controls whether other members of a 3DSpace, such as AI agents connected through the Space MCP endpoint of the
+         * instant3Dhub, may request screenshots of the default viewer of this client.
+         *
+         * A screenshot shows everything the user sees, including models that the requesting member has no access to.
+         *
+         * Screenshots are only taken if the instant3Dhub allows member screenshots as well, with the Helm value
+         * `experimental.spaces.memberScreenshots.enabled`. Changes take effect for the next request.
+         *
+         * @default false
+         */
+        MEMBER_SCREENSHOTS_ENABLED = "memberScreenshotsEnabled",
         /**
          * @deprecated NOTIFICATION_LOG_LEVELS is deprecated, please use UISetting.NOTIFICATION_FILTER and the
          * getSetting/setSetting functions on the webvisUI-Object"
@@ -6890,6 +6940,515 @@ To enable this, members can exchange space handles, which are shareable referenc
          * @see {@link SnapshotProperties}
          */
         INCONSISTENT = 1,
+    }
+    /**
+     * Version information baked into the service worker build.
+     *
+     * @see {@link ServiceWorkerAPI}
+     * @see {@link ServiceWorkerAPI.requestServiceWorkerVersion}
+     */
+    interface ServiceWorkerVersionInfo {
+        /**
+         * Package version, taken from package.json at build time.
+         */
+        version: string;
+        /**
+         * Git commit hash the build was produced from.
+         */
+        revision: string;
+    }
+    /**
+     * Details of a failure in a service worker operation that runs detached from its request (e.g. a
+     * cache clear that was acknowledged early, or automatic eviction/expiration). Such failures cannot be
+     * reported via the original call's promise, so they are delivered through
+     * {@link ServiceWorkerErrorEvent}.
+     *
+     * @see {@link ServiceWorkerErrorEvent}
+     */
+    interface ServiceWorkerErrorInfo {
+        /**
+         * The operation that failed.
+         */
+        operation: ServiceWorkerOperation;
+        /**
+         * The error message reported by the service worker.
+         */
+        message: string;
+    }
+    /**
+     * Configuration of the service worker's local caching behavior.
+     *
+     * @see {@link ServiceWorkerAPI}
+     * @see {@link ServiceWorkerAPI.requestServiceWorkerConfig}
+     * @see {@link ServiceWorkerAPI.changeServiceWorkerConfig}
+     */
+    interface ServiceWorkerConfig {
+        /**
+         * Whether the service worker is currently caching delivery-service responses locally. When false,
+         * requests bypass the cache entirely (no reads, no writes).
+         */
+        cachingEnabled: boolean;
+        /**
+         * Maximum age of a cache before it is evicted, in milliseconds.
+         */
+        cacheExpirationMs: number;
+        /**
+         * Verbosity of the service worker's logging.
+         */
+        logLevel: LogLevel;
+        /**
+         * Whether quota-based auto-cleanup is enabled. When storage usage exceeds the upper limit,
+         * least-recently-read caches are evicted until usage drops below the lower limit.
+         */
+        evictionEnabled: boolean;
+        /**
+         * Upper storage watermark as a fraction of the browser-reported quota (0..1). Eviction starts
+         * once usage exceeds this.
+         */
+        quotaUpperFraction: number;
+        /**
+         * Lower storage watermark as a fraction of the browser-reported quota (0..1). Eviction stops
+         * once usage drops below this. Must be smaller than the upper fraction.
+         */
+        quotaLowerFraction: number;
+    }
+    /**
+     * Statistics about the data cached by the service worker, together with the origin-wide storage
+     * usage reported by the browser.
+     *
+     * @see {@link ServiceWorkerAPI}
+     * @see {@link ServiceWorkerAPI.requestServiceWorkerStats}
+     */
+    interface ServiceWorkerCacheStats {
+        /**
+         * Total number of bytes cached across all webvis caches, summed from the `content-length`
+         * of every cached entry. This is the transfer size (what crossed the network), not the on-disk
+         * footprint; for actual storage consumption see {@link ServiceWorkerCacheStats.usage}.
+         */
+        totalTransferSize: number;
+        /**
+         * Total number of individual cached entries across all caches.
+         */
+        entryCount: number;
+        /**
+         * Number of distinct caches currently tracked.
+         */
+        cacheCount: number;
+        /**
+         * Origin-wide storage currently in use, in bytes, as reported by StorageManager.estimate().
+         * Includes all origin storage (Cache Storage, IndexedDB, ...), not just our caches. This
+         * (not {@link ServiceWorkerCacheStats.totalTransferSize}) reflects actual storage consumption.
+         */
+        usage: number;
+        /**
+         * Origin-wide storage budget, in bytes, as reported by StorageManager.estimate(). This is a
+         * browser-imposed, padded estimate, not a hard CacheStorage limit.
+         */
+        quota: number;
+    }
+    /**
+     * Summary of a service worker cache-clearing operation.
+     *
+     * The entry count and cleared bytes are best-effort values taken from the service worker's maintained
+     * counters, so they may drift slightly from the exact figures.
+     *
+     * @see {@link ServiceWorkerCacheClearedEvent}
+     */
+    interface ServiceWorkerCacheClearedInfo {
+        /**
+         * Why the clear happened.
+         */
+        reason: ServiceWorkerCacheClearedReason;
+        /**
+         * Number of caches that were removed.
+         */
+        clearedCacheCount: number;
+        /**
+         * Number of cached entries that were removed (best-effort).
+         */
+        clearedEntryCount: number;
+        /**
+         * Approximate transfer size, in bytes, of the removed cached responses, summed from their
+         * `content-length` (what crossed the network) rather than the on-disk footprint. Best-effort.
+         */
+        clearedTransferSize: number;
+    }
+    /**
+     * ## ServiceWorkerAPI
+     *
+     * ### Overview
+     * The ServiceWorkerAPI controls the webvis service worker, which caches delivery-service
+     * responses locally so that previously loaded data can be served from the browser's Cache Storage
+     * instead of being re-fetched from the backend. This speeds up subsequent loads and reduces network
+     * traffic.
+     *
+     * The service worker is a single, origin-global instance shared by every tab and context. Changing
+     * its configuration or clearing its cache therefore affects all of them, and changes are broadcast
+     * so each context stays in sync.
+     *
+     * Cached responses are grouped into caches: each loaded resource has its own cache, and the individual
+     * responses for it are the entries within that cache. This is reflected in the statistics, which report
+     * both a {@link ServiceWorkerCacheStats.cacheCount} and an {@link ServiceWorkerCacheStats.entryCount}.
+     *
+     * ### Registration
+     *
+     * The service worker script (`webvis.serviceworker.js`) is **not bundled with your application** — it
+     * is delivered by the instant3Dhub backend. Your application is responsible for registering it at
+     * runtime from the URL your backend exposes. This is a prerequisite for everything below: until a
+     * worker is registered, activated and controlling the page, the API has nothing to talk to (see
+     * {@link ServiceWorkerAPI.isServiceWorkerConnected} and {@link ServiceWorkerConnectedEvent}).
+     *
+     * A service worker can only be registered from a URL on the **same origin** as your application, and
+     * the hub is a different origin — so you cannot register the hub URL directly. Instead, ship a tiny
+     * service worker of your own (served from your origin) that acts as a wrapper and loads the
+     * hub-delivered worker via `importScripts`. Unlike a module `import`, `importScripts` can fetch a
+     * cross-origin script without CORS, so the wrapper must be a classic service worker (do not pass
+     * `{ type: "module" }`). Pass the hub worker URL to the wrapper as a query parameter at registration
+     * time so it doesn't have to be hard-coded.
+     *
+     * Your same-origin wrapper, e.g. `webvis-sw.js`:
+     * ```javascript
+     * // Served from your own origin. Loads the backend-delivered worker, whose URL is passed as a query
+     * // parameter. importScripts is synchronous, so the imported worker's install/activate/fetch handlers
+     * // are registered before the install event fires.
+     * const hubUrl = new URL(self.location.href).searchParams.get("hubUrl");
+     *
+     * if (hubUrl) {
+     *   importScripts(new URL("/repo/webvis/webvis.serviceworker.js", hubUrl).href);
+     * }
+     * ```
+     *
+     * Registering the wrapper from your application:
+     * ```javascript
+     * // The instant3Dhub origin that delivers the worker.
+     * const hubUrl = "https://your-hub.example.com";
+     *
+     * if ("serviceWorker" in navigator) {
+     *   navigator.serviceWorker.register(
+     *       `/webvis-sw.js?hubUrl=${encodeURIComponent(hubUrl)}`, // your same-origin wrapper
+     *       {updateViaCache: "none"},                             // Update-check against the network, not the HTTP cache
+     *   ).catch((error) => {
+     *     console.error("Failed to register the webvis service worker", error);
+     *   });
+     * }
+     *
+     * const context = webvis.getContext();
+     *
+     * // The connection is established automatically once the worker controls the page.
+     * context.registerListener(
+     *   [webvis.EventType.SERVICE_WORKER_CONNECTED],
+     *   () => console.log("Service worker connected:", context.isServiceWorkerConnected())
+     * );
+     * ```
+     *
+     * Once connected, the API also detects when the running worker is older than the one shipped with the
+     * current application and automatically asks the browser to update it (see
+     * {@link ServiceWorkerAPI.isServiceWorkerStale}). This relies on the webvis bundle and the worker
+     * being delivered together, so the version baked into this build reflects the backend's current one.
+     *
+     * ### Conditions
+     *
+     * Local caching only works if all the following hold:
+     *
+     * - **Secure context:** the app is served over HTTPS (or from localhost).
+     * - **Same-origin wrapper:** the registered script is a classic worker (not `{type: "module"}`) on the
+     *   app's origin that loads the hub worker via `importScripts`.
+     * - **Scope:** the registration's scope covers the pages that run webvis.
+     * - **One registration per origin:** CacheStorage and the metadata database are per-origin, so a second
+     *   webvis registration — even on another scope — shares the same cached data and counters, and its
+     *   worker runs its own maintenance (eviction, expiry) against that shared storage. Prefer a single
+     *   registration to avoid redundant or conflicting maintenance.
+     * - **Fixed script URL:** always register the same wrapper URL, including `?hubUrl=`. A different URL
+     *   installs a new worker that takes over all pages in the scope.
+     * - **Existing service worker:** if the app already has one on that scope, call `importScripts` for the
+     *   webvis worker in it *before* adding the app's own `fetch` listeners, or make sure those don't
+     *   answer any hub requests.
+     * - **CSP:** `worker-src` allows the wrapper, and `script-src` allows the hub URL used by `importScripts`.
+     * - **IndexedDB available:** without it the worker passes every request through to the network.
+     *
+     * ### Authorization
+     *
+     * Data served from the local cache does not reach the delivery service, so the delivery service
+     * cannot check access for it. For backends that authorize only at data level (late authorization),
+     * this would skip the only authorization check. The service worker therefore confirms a grant before
+     * it serves the first cache hit for a resource: it replays the request's credentials in one uncached
+     * HEAD request to the delivery service, once per resource and signature. A successful network request
+     * for the resource counts as confirmation as well. If the HEAD is rejected, its status is returned to
+     * webvis instead of the cached data and the resource enters {@link NodeState.ERROR_AUTHORIZATION}.
+     *
+     * The check runs inside the worker, so it costs nothing while caching is disabled, while the page is
+     * controlled by another service worker, or for data that is not cached. It is controlled by
+     * {@link SettingStrings.LOCAL_CACHE_AUTH_CHECK_ENABLED} (enabled by default), which is passed to the
+     * worker when it connects and applies to every tab of the origin; later changes of the setting are
+     * ignored. Backends that authorize when a resource is added can disable it to save that request,
+     * e.g. centrally in the hub's `webvis.config.json`:
+     * ```json
+     * { "localCacheAuthCheckEnabled": false }
+     * ```
+     *
+     * ### Key Features
+     *
+     * - Enabling or disabling local caching at runtime
+     * - Configuring the cache expiration and the service worker's log level
+     * - Quota-based automatic eviction (least-recently-used) and age-based expiration cleanup
+     * - Clearing all cached data, or only data not accessed within a given window
+     * - Querying cache statistics and the current storage usage
+     * - Reporting the running worker's version and whether it is outdated
+     * - Surfacing failures of background operations (clear, eviction, expiration)
+     * - Optional authorization check per resource before cached data is used
+     *
+     * ### Quick Start
+     *
+     * ```javascript
+     * // Get the webvis context
+     * const context = webvis.getContext();
+     *
+     * // Disable local caching
+     * await context.changeServiceWorkerConfig({cachingEnabled: false});
+     *
+     * // Read the current cache statistics
+     * const stats = await context.requestServiceWorkerStats();
+     * console.log(`${stats.entryCount} entries, ${stats.totalTransferSize} bytes`);
+     *
+     * // Clear all locally cached data
+     * await context.clearServiceWorkerCache();
+     * ```
+     *
+     * ### Events
+     *
+     * The API triggers the following events:
+     *
+     * - {@link ServiceWorkerConnectedEvent}
+     * - {@link ServiceWorkerConfigChangedEvent}
+     * - {@link ServiceWorkerCacheClearedEvent}
+     * - {@link ServiceWorkerErrorEvent}
+     *
+     * ### Related Types
+     *
+     * - {@link ServiceWorkerConfig}
+     * - {@link ServiceWorkerCacheStats}
+     * - {@link ServiceWorkerVersionInfo}
+     * - {@link ServiceWorkerCacheClearedInfo}
+     * - {@link ServiceWorkerErrorInfo}
+     * - {@link ServiceWorkerCacheClearedReason}
+     * - {@link ServiceWorkerOperation}
+     */
+    interface ServiceWorkerAPI {
+        /**
+         * Changes the service worker configuration.
+         *
+         * Only the given fields are updated; omitted fields keep their current value. A change is
+         * applied to the single, origin-global service worker, so it affects every tab and context,
+         * and it is persisted across restarts.
+         *
+         * Triggers a {@link ServiceWorkerConfigChangedEvent} containing only the fields whose value actually
+         * changed. Setting a field to its current value is a no-op and triggers no event.
+         *
+         * Example usage:
+         * ```javascript
+         * // Get the webvis context
+         * const context = webvis.getContext();
+         *
+         * // Disable caching and shorten the cache lifetime to one day
+         * await context.changeServiceWorkerConfig({
+         *   cachingEnabled: false,
+         *   cacheExpirationMs: 24 * 60 * 60 * 1000,
+         * });
+         * ```
+         *
+         * Invalid field values (e.g. a negative expiration or an out-of-range quota fraction) are ignored,
+         * keeping the previous value.
+         *
+         * @param config The configuration fields to change.
+         * @returns A promise that resolves once the change has been applied and persisted, and rejects if
+         *          it could not be persisted.
+         */
+        changeServiceWorkerConfig(config: Partial<ServiceWorkerConfig>): Promise<void>;
+        /**
+         * Clears data cached locally by the service worker.
+         *
+         * Without an argument, removes every webvis cache from Cache Storage along with its metadata.
+         * With `notAccessedForMs`, removes only caches that have not been read within that window (based
+         * on last access, i.e. least-recently-used), leaving recently-used caches intact — useful for
+         * reclaiming space on demand without discarding hot data. Because the service worker is shared,
+         * this affects all tabs and contexts. A cache that an active load is still filling is skipped and
+         * keeps everything it holds, including the entries cached before the clear; the load continues to
+         * cache as usual.
+         *
+         * Clearing can take a while on large stores, so the returned promise resolves once the operation
+         * has been **accepted** by the service worker, not once it has finished. Listen for
+         * {@link ServiceWorkerCacheClearedEvent} to know when the caches have actually been cleared (it
+         * carries a summary of what was removed).
+         *
+         * @param notAccessedForMs Optional. Only clear caches not read within the last this-many
+         *                         milliseconds. Must be a non-negative number; an invalid value is ignored
+         *                         and no caches are cleared. Omit it to clear all.
+         * @returns A promise that resolves once the clear has been accepted (see above).
+         */
+        clearServiceWorkerCache(notAccessedForMs?: number): Promise<void>;
+        /**
+         * Returns the current service worker configuration.
+         *
+         * @returns A promise that resolves with the current {@link ServiceWorkerConfig}.
+         */
+        requestServiceWorkerConfig(): Promise<ServiceWorkerConfig>;
+        /**
+         * Resets the service worker configuration to its installation defaults.
+         *
+         * Triggers a {@link ServiceWorkerConfigChangedEvent} containing only the fields whose value changes as a
+         * result. If the configuration already matches the defaults, this is a no-op.
+         *
+         * @returns A promise that resolves once the configuration has been reset and persisted.
+         */
+        resetServiceWorkerConfig(): Promise<void>;
+        /**
+         * Returns statistics about the data cached by the service worker.
+         *
+         * @returns A promise that resolves with the current {@link ServiceWorkerCacheStats}.
+         */
+        requestServiceWorkerStats(): Promise<ServiceWorkerCacheStats>;
+        /**
+         * Returns whether the connection to the service worker is currently established.
+         *
+         * Reflects whether the CONNECT handshake has completed successfully. A service worker that
+         * registers later (see {@link ServiceWorkerConnectedEvent}) may flip this to true after it was
+         * initially false, so prefer reacting to the event for live updates.
+         *
+         * @returns True if the service worker is connected.
+         */
+        isServiceWorkerConnected(): boolean;
+        /**
+         * Returns the version information of the service worker that is currently controlling the page.
+         *
+         * This is queried from the running worker, which may be older than the version this webvis build
+         * expects if it has not updated yet (see {@link ServiceWorkerAPI.isServiceWorkerStale}).
+         *
+         * @returns A promise that resolves with the running service worker's {@link ServiceWorkerVersionInfo}.
+         */
+        requestServiceWorkerVersion(): Promise<ServiceWorkerVersionInfo>;
+        /**
+         * Returns whether the service worker controlling the page is out of date.
+         *
+         * Compares the running worker's revision with the revision this webvis build expects. A stale worker
+         * is updated automatically, so this is primarily for diagnostics/display.
+         *
+         * @returns A promise that resolves with true if the running service worker is stale.
+         */
+        isServiceWorkerStale(): Promise<boolean>;
+        /**
+         * Returns whether the service worker checks the authorization before it serves cached data (see the
+         * Authorization section above).
+         *
+         * This is the running worker's actual state. It can differ from this context's
+         * {@link SettingStrings.LOCAL_CACHE_AUTH_CHECK_ENABLED}: the worker applies (and keeps across restarts)
+         * the value of the last context that connected, from any tab of the origin, and the setting is only
+         * read when this context connects.
+         *
+         * @returns A promise that resolves with true if the authorization check is active.
+         */
+        isServiceWorkerAuthCheckEnabled(): Promise<boolean>;
+    }
+    /**
+     * Event that is fired when a service worker operation that runs detached from its request fails
+     * (e.g. a cache clear acknowledged early, or automatic eviction/expiration). Such failures cannot be
+     * surfaced via the triggering call's promise, so they are reported here.
+     *
+     * @event
+     * @hideconstructor
+     *
+     * @see {@link ServiceWorkerAPI}
+     * @see {@link EventType.SERVICE_WORKER_ERROR}
+     */
+    class ServiceWorkerErrorEvent extends WebVisEvent {
+        info: ServiceWorkerErrorInfo;
+        /**
+         * @param info Details of the failed operation.
+         */
+        constructor(info: ServiceWorkerErrorInfo);
+    }
+    /**
+     * Event that is fired when the service worker is connected.
+     *
+     * @event
+     * @hideconstructor
+     *
+     * @see {@link ServiceWorkerAPI}
+     * @see {@link EventType.SERVICE_WORKER_CONNECTED}
+     */
+    class ServiceWorkerConnectedEvent extends WebVisEvent {
+        constructor();
+    }
+    /**
+     * Event that is fired when the configuration of the service worker is changed.
+     * Contains only the configuration fields that were actually changed.
+     *
+     * @event
+     * @hideconstructor
+     *
+     * @see {@link ServiceWorkerAPI}
+     * @see {@link EventType.SERVICE_WORKER_CONFIG_CHANGED}
+     */
+    class ServiceWorkerConfigChangedEvent extends WebVisEvent {
+        config: Partial<ServiceWorkerConfig>;
+        /**
+         * @param config An object containing only the configuration fields that were changed.
+         */
+        constructor(config: Partial<ServiceWorkerConfig>);
+    }
+    /**
+     * Event that is fired when the local cache of the service worker is cleared.
+     * Carries a best-effort summary of what was removed.
+     *
+     * @event
+     * @hideconstructor
+     *
+     * @see {@link ServiceWorkerAPI}
+     * @see {@link EventType.SERVICE_WORKER_CACHE_CLEARED}
+     */
+    class ServiceWorkerCacheClearedEvent extends WebVisEvent {
+        info: ServiceWorkerCacheClearedInfo;
+        /**
+         * @param info A best-effort summary of the cache-clearing operation.
+         */
+        constructor(info: ServiceWorkerCacheClearedInfo);
+    }
+    /**
+     * Identifies which service worker operation a failure refers to.
+     *
+     * @see {@link ServiceWorkerErrorEvent}
+     */
+    enum ServiceWorkerOperation {
+        /**
+         * Clearing caches.
+         */
+        CLEAR = 0,
+        /**
+         * Automatic quota-based eviction.
+         */
+        EVICTION = 1,
+        /**
+         * Automatic age-based expiration cleanup.
+         */
+        EXPIRATION = 2,
+    }
+    /**
+     * Why the service worker cleared one or more caches.
+     *
+     * @see {@link ServiceWorkerCacheClearedEvent}
+     */
+    enum ServiceWorkerCacheClearedReason {
+        /**
+         * Explicitly triggered by the application (e.g. {@link ServiceWorkerAPI.clearServiceWorkerCache}).
+         */
+        USER = 0,
+        /**
+         * Automatic removal of caches that exceeded the configured age.
+         */
+        EXPIRATION = 1,
+        /**
+         * Automatic removal of least-recently-read caches to stay under the storage quota.
+         */
+        EVICTION = 2,
     }
     /**
      * Represents the result of a change selection operation.
@@ -7951,7 +8510,6 @@ To enable this, members can exchange space handles, which are shareable referenc
         | `metadata.auxProperties.${string}`
         | `auxProperties.${string}`
         | "faceHandles"
-        | "faceHandle"
         | "extFaceLinks"
         | `property.${Property}`
         | `ancestors.${string}`
@@ -8161,16 +8719,8 @@ To enable this, members can exchange space handles, which are shareable referenc
      * - `faceHandles`: An array of {@link TopologyHandle}s for the faces connected to the aux node, or an empty
      *   array if the aux node is not connected to any face.
      *
-     * - `faceHandle`: This is a legacy selector. New code should use the `faceHandles` selector instead. This
-     *   selector returns {@link TopologyHandle}s for the faces connected to the aux node and changes the
-     *   result structure in the same way as the `extFaceLink` selector described below.
-     *
-     * - `extFaceLinks`: The external face links of the aux node, as strings. This selector changes the result
-     *   structure in the following way: If an aux node has multiple external face links, there will be multiple
-     *   result entries for that node, each with a different external face link and the same values for all other
-     *   selectors. If an aux node has no external face links and there are no other selectors, then the result will
-     *   not contain an entry for that node. If an aux node has no external face links but there are other selectors,
-     *   then this selector will return the string `"undefined"` for that node.
+     * - `extFaceLinks`: An array with the external face links of the aux node, as strings, or an empty array if the
+     *   aux node has no external face links.
      *
      * #### Structure Node Selectors
      *
@@ -9211,6 +9761,13 @@ To enable this, members can exchange space handles, which are shareable referenc
          * {@link MeasurementAPI.measureBetween measureBetween}.
          */
         intersection?: MeasurementTarget[];
+        /**
+         * The most specific measurement targets used for the minimal distance calculation,
+         * in the same order as {@link points}. If a target was passed as a Shape or Node,
+         * the entry is the resolved face or edge (class TOPOLOGY). Otherwise, it is the
+         * target passed to {@link MeasurementAPI.measureBetween measureBetween}.
+         */
+        targets?: [MeasurementTarget, MeasurementTarget];
     }
     /**
      * ## MeasurementAPI
@@ -11413,6 +11970,8 @@ To enable this, members can exchange space handles, which are shareable referenc
          */
         MODEL_VIEWS = "modelViews",
         /**
+         * @deprecated Property NAMES is deprecated and will be removed in the future. Please use {@link LABEL} instead.
+         *
          * Contains the names of a node.
          *
          * @default []
@@ -11725,10 +12284,6 @@ To enable this, members can exchange space handles, which are shareable referenc
          */
         REGENERATE_RECURSIVE = 2,
     }
-    interface UserFeedback {
-        rating: number;
-        message: string;
-    }
     /**
      * Defines the information about a content type. A content type stores information about the format which could be transcoded by the backend transcoder service.
      *
@@ -11917,10 +12472,6 @@ To enable this, members can exchange space handles, which are shareable referenc
          * @see {@link ClipPlaneAPI.createCapping}
          */
         GEOMETRY = "GeometryService",
-        /**
-         * Indicates the Hub2Resource as a service.
-         */
-        HUB_2_RESOURCE = "Hub2ResourceService",
         /**
          * Indicates the Hub3Resource as a service.
          */
@@ -12932,7 +13483,32 @@ To enable this, members can exchange space handles, which are shareable referenc
          * @see {@link AppearancePatternAPI}
          */
         APPEARANCE_PATTERN_REMOVED = 154,
-        EVENT_TYPE_COUNT = 155,
+        /**
+         * Event type corresponding to a {@link ContextClearedEvent}
+         * @see {@link ContextAPI}
+         */
+        CONTEXT_CLEARED = 155,
+        /**
+         * Event type corresponding to an {@link ServiceWorkerCacheClearedEvent}
+         * @see {@link ServiceWorkerAPI}
+         */
+        SERVICE_WORKER_CACHE_CLEARED = 156,
+        /**
+         * Event type corresponding to an {@link ServiceWorkerConnectedEvent}
+         * @see {@link ServiceWorkerAPI}
+         */
+        SERVICE_WORKER_CONNECTED = 157,
+        /**
+         * Event type corresponding to an {@link ServiceWorkerConfigChangedEvent}
+         * @see {@link ServiceWorkerAPI}
+         */
+        SERVICE_WORKER_CONFIG_CHANGED = 158,
+        /**
+         * Event type corresponding to an {@link ServiceWorkerErrorEvent}
+         * @see {@link ServiceWorkerAPI}
+         */
+        SERVICE_WORKER_ERROR = 159,
+        EVENT_TYPE_COUNT = 160,
     }
     interface DrawingPlaneProperties {
         /**
@@ -13483,10 +14059,11 @@ To enable this, members can exchange space handles, which are shareable referenc
             MaterialAPI,
             MemberAPI,
             SpaceAPI,
-            AppearancePatternAPI
+            AppearancePatternAPI,
+            ServiceWorkerAPI
     {
         /**
-         * Clears the whole Context by removing all Nodes, Snapshots, ClipPlanes, Drawings, Measurements, etc.
+         * Clears the whole Context by removing all Nodes, Snapshots, ClipPlanes, Drawings, Measurements, etc. and triggers a {@link ContextClearedEvent}.
          */
         clear(): Promise<void>;
         /**
@@ -13544,6 +14121,19 @@ To enable this, members can exchange space handles, which are shareable referenc
          * @param hard If true, the reset is a hard reset, otherwise it is a soft reset.
          */
         constructor(hard: boolean);
+    }
+    /**
+     * Event that is fired when a context clear is performed.
+     *
+     * @event
+     * @hideconstructor
+     *
+     * @see {@link EventType.CONTEXT_CLEARED}
+     * @see {@link ContextAPI}
+     * @see {@link ContextAPI.clear}
+     */
+    class ContextClearedEvent extends WebVisEvent {
+        constructor();
     }
     // eslint-disable-next-line @typescript-eslint/naming-convention -- To maintain backwards compatibility with customer code, we have to deviate from the naming convention here.
     interface ICollection {
@@ -15813,12 +16403,26 @@ To enable this, members can exchange space handles, which are shareable referenc
     interface AnimationAPI {
         /**
          * Creates a new keyframe-based animation sequence.
+         *
+         * If an animation sequence with the same name already exists, the call is ignored. Remove the
+         * existing sequence with {@link removeAnimationFrames} before creating a new one under the same name.
+         *
+         * Triggers an {@link AnimationFramesCreatedEvent}.
+         *
          * @param name The name of the animation sequence.
          * @param frames The keyframes of the animation sequence.
          */
         createAnimationFrames(name: string, frames: AnimationFrame[]): void;
         /**
          * Removes an existing animation sequence.
+         *
+         * If the animation sequence is currently running on a target, the target finishes its current
+         * iteration and then stops.
+         *
+         * If no animation sequence with the given name exists, the call is ignored.
+         *
+         * Triggers an {@link AnimationFramesRemovedEvent}.
+         *
          * @param name Specifies the name of the animation frames.
          */
         removeAnimationFrames(name: string): void;

@@ -25,6 +25,7 @@ import "./test/NodePathAPI";
 import "./test/QueryAPI";
 import "./test/RealityAPI";
 import "./test/SelectionAPI";
+import "./test/ServiceWorkerAPI";
 import "./test/SessionStorageAPI";
 import "./test/SettingsAPI";
 import "./test/SpaceAPI";

@@ -12,4 +12,8 @@ function test(testContext: webvis.ContextAPI): void {
     const viewers: webvis.ViewerAPI[] = testContext.getViewers();
 
     testContext.removeViewer(testViewer);
+
+    testContext.registerListener([webvis.EventType.CONTEXT_CLEARED], (event: webvis.ContextClearedEvent) => {
+        console.log("Context cleared");
+    });
 }
